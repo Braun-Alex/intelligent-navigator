@@ -1,0 +1,51 @@
+{
+  "name": "knu-document-navigator",
+  "version": "3.0.0",
+  "description": "Інтелектуальний навігатор з нормативних документів Київського національного університету імені Тараса Шевченка",
+  "productName": "Навігатор з документів КНУТШ",
+  "author": "Alex Braun",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint ./src"
+  },
+  "dependencies": {
+    "@quasar/extras": "^1.17.0",
+    "@quasar/vite-plugin": "^1.10.0",
+    "axios": "^1.12.2",
+    "pinia": "^3.0.3",
+    "quasar": "^2.18.5",
+    "vue": "^3.5.22",
+    "vue-router": "^4.5.1",
+    "marked": "^16.4.0",
+    "highlight.js": "^11.11.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.37.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.5.0",
+    "postcss": "^8.5.6",
+    "prettier": "^3.6.2",
+    "sass": "^1.93.2",
+    "vite": "^7.1.9"
+  },
+  "browserslist": [
+    "last 10 Chrome versions",
+    "last 10 Firefox versions",
+    "last 4 Edge versions",
+    "last 7 Safari versions",
+    "last 8 Android versions",
+    "last 8 ChromeAndroid versions",
+    "last 8 iOS versions"
+  ],
+  "engines": {
+    "node": "^20 || ^18 || ^16",
+    "npm": ">= 6.13.4",
+    "yarn": ">= 1.21.1"
+  }
+}
