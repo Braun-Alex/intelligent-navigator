@@ -1,15 +1,16 @@
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncIterator
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import ChatOpenAI
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import pypdf
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from app.config import settings
-
 from app.rag.retriever.hybrid_retriever import HybridRetriever
 from app.rag.evaluator.quality_evaluator import RAGQualityEvaluator
 from app.rag.validator.query_validator import QueryValidator
@@ -19,11 +20,11 @@ from app.rag.splitter.custom_splitter import HybridLegalDocumentSplitter
 
 class RAGPipeline:
     """
-    RAG-пайплайн, який відповідає за:
-    - гібридний ретривер
-    - валідацію запитів
-    - оцінку якості відповіді
-    - гібридне розбиття документів
+    RAG-пайплайн з підтримкою:
+    - streaming-режимом відповідей
+    - асинхронної оцінки якості
+    - валідації запитів
+    - опціонального LLM compression
     """
 
     def __init__(
@@ -31,7 +32,8 @@ class RAGPipeline:
             documents_path: Optional[str] = None,
             persist_directory: Optional[str] = None,
             initialize: bool = True,
-            use_llm_compression: bool = True
+            use_llm_compression: bool = False,
+            use_llm_validation: bool = False
     ):
         self.documents_path = documents_path or settings.documents_path
         self.persist_directory = persist_directory or settings.persist_directory
@@ -39,14 +41,17 @@ class RAGPipeline:
         # Параметри RAG
         self.chunk_size = settings.chunk_size
         self.chunk_overlap = settings.chunk_overlap
-        self.top_k = settings.top_k
-        self.rerank_top_k = settings.rerank_top_k
+        self.top_k = min(settings.top_k, 5)
+        self.rerank_top_k = min(settings.rerank_top_k, 3)
         self.bm25_weight = settings.bm25_weight
         self.vector_weight = settings.vector_weight
         self.use_llm_compression = use_llm_compression
         self.cross_encoder_model = settings.cross_encoder_model
 
-        # Ініціалізація вбудовувань Hugging Face Embeddings
+        # Thread Pool для асинхронних задач
+        self.executor = ThreadPoolExecutor(max_workers=2)
+
+        # Ініціалізація вбудовувань
         print("Ініціалізація вбудовувань...")
         self.embeddings = HuggingFaceEmbeddings(
             model_name=settings.embedding_model,
@@ -59,7 +64,8 @@ class RAGPipeline:
         self.llm = ChatOpenAI(
             model=settings.llm_model,
             temperature=0.0,
-            openai_api_key=settings.openai_api_key
+            openai_api_key=settings.openai_api_key,
+            streaming=True
         )
 
         # Компоненти RAG
@@ -69,10 +75,10 @@ class RAGPipeline:
         self.query_validator = None
 
         if initialize:
-            self._initialize_pipeline()
+            self._initialize_pipeline(use_llm_validation)
 
-    def _initialize_pipeline(self):
-        """Ініціалізія RAG-пайплайну"""
+    def _initialize_pipeline(self, use_llm_validation: bool = False):
+        """Ініціалізація RAG-пайплайну"""
         if os.path.exists(self.persist_directory):
             print("Завантаження наявного сховища...")
             self.vector_store = Chroma(
@@ -81,13 +87,11 @@ class RAGPipeline:
                 collection_name=settings.collection_name
             )
 
-            # Перевірка на те, чи є сховище порожнім
             try:
                 collection = self.vector_store.get()
                 doc_count = len(collection.get('ids', []))
                 print(f"Знайдено {doc_count} чанків у сховищі!")
 
-                # Якщо сховище є порожнім, починаємо індексацію документів
                 if doc_count == 0:
                     print("Сховище є порожнім. Початок індексації документів...")
                     self._index_documents()
@@ -105,23 +109,26 @@ class RAGPipeline:
         self.retriever = HybridRetriever(
             vector_store=self.vector_store,
             embeddings=self.embeddings,
-            llm=self.llm,
+            llm=None,
             bm25_weight=self.bm25_weight,
             vector_weight=self.vector_weight,
             top_k=self.top_k,
             rerank_top_k=self.rerank_top_k,
-            use_llm_compression=self.use_llm_compression,
+            use_llm_compression=False,
             cross_encoder_model=self.cross_encoder_model
         )
 
-        # Ініціалізація оцінювача якості відповідей
+        # Ініціалізація оцінювача якості
         if settings.enable_evaluation:
             print("Ініціалізація оцінювача якості відповідей...")
             self.evaluator = RAGQualityEvaluator(llm=self.llm)
 
         # Ініціалізація валідатора запитів
         print("Ініціалізація валідатора запитів...")
-        self.query_validator = QueryValidator(llm=self.llm)
+        self.query_validator = QueryValidator(
+            llm=self.llm,
+            use_llm_validation=use_llm_validation
+        )
 
         self.prompt_template = answer_generation_prompt
 
@@ -254,36 +261,31 @@ class RAGPipeline:
             import traceback
             traceback.print_exc()
 
-    def query(
+    async def query_stream(
             self,
             question: str,
             return_evaluation: bool = False,
             return_contexts: bool = False
-    ) -> Dict[str, Any]:
+    ) -> AsyncIterator[Dict[str, Any]]:
         """
         Метод запиту до RAG-системи
-
-        Аргументи:
-            question: запит користувача
-            return_evaluation: прапорець користувача стосовно того, чи проводити оцінку якості відповідей
-            return_contexts: прапорець користувача стосовно того, чи надавати знайдені фрагменти як контекст
-
-        Повертає словник з відповіддю та метаданими
         """
         # Валідація запиту
         if self.query_validator:
             validation_result = self.query_validator.validate_query(question)
+            
+            yield {
+                "type": "validation",
+                "data": {
+                    "is_valid": validation_result.is_valid,
+                    "reason": validation_result.rejection_reason
+                }
+            }
 
             if not validation_result.is_valid:
-                return {
-                    "question": question,
-                    "answer": validation_result.rejection_reason,
-                    "num_contexts": 0,
-                    "validation_failed": True,
-                    "validation_reason": validation_result.rejection_reason
-                }
+                return
 
-        # Отримання контекстів з оцінками релевантності
+        # Отримання контекстів
         retrieved_results = self.retriever.retrieve(question, return_scores=True)
         retrieved_docs = [r.document for r in retrieved_results]
 
@@ -293,74 +295,97 @@ class RAGPipeline:
             for doc in retrieved_docs
         ])
 
-        # Побудова запиту
-        prompt = self.prompt_template.format(
-            context=context_text,
-            question=question
-        )
-
-        # Генерація відповіді
-        answer = self.llm.invoke(prompt).content
-
-        response = {
-            "question": question,
-            "answer": answer,
-            "num_contexts": len(retrieved_docs),
-            "validation_failed": False
-        }
-
-        individual_relevancy = None
-
-        # Оцінка якості відповідей
-        if return_evaluation and self.evaluator:
-
-            # Виконуємо оцінку якості відповіді
-            metrics = self.evaluator.evaluate(
-                query=question,
-                answer=answer,
-                contexts=retrieved_docs
-            )
-
-            response["evaluation"] = {
-                "faithfulness": metrics.faithfulness,
-                "answer_relevancy": metrics.answer_relevancy,
-                "context_relevancy": metrics.context_relevancy,
-                "mrr": metrics.mrr,
-                "map": metrics.map_score,
-                "overall_score": metrics.overall_score
-            }
-
-            individual_relevancy = getattr(metrics, 'individual_relevancy', None)
-
-        # Повертаємо контекст відповіді
         if return_contexts:
             key_terms = self.retriever._extract_key_terms(question)
-
-            contexts_with_relevance = []
-
+            contexts_data = []
+            
             for i, result in enumerate(retrieved_results):
                 doc = result.document
-
-                if individual_relevancy is not None and i < len(individual_relevancy):
-                    is_relevant = individual_relevancy[i]
-                else:
-                    is_relevant = None
-
-                contexts_with_relevance.append({
+                contexts_data.append({
                     "content": doc.page_content,
                     "preview": doc.page_content[:300] + "..." if len(doc.page_content) > 300 else doc.page_content,
                     "length": len(doc.page_content),
                     "metadata": doc.metadata,
                     "source": doc.metadata.get('source', 'Unknown'),
                     "chunk_index": doc.metadata.get('chunk_index', None),
-                    "is_relevant": is_relevant,
                     "rank": i + 1,
                     "key_terms": key_terms
                 })
 
-            response["contexts"] = contexts_with_relevance
+            yield {
+                "type": "contexts",
+                "data": {
+                    "contexts": contexts_data,
+                    "num_contexts": len(contexts_data)
+                }
+            }
 
-        return response
+        # Генерація відповіді
+        prompt = self.prompt_template.format(
+            context=context_text,
+            question=question
+        )
+
+        full_answer = ""
+        async for chunk in self.llm.astream(prompt):
+            token = chunk.content
+            full_answer += token
+            
+            yield {
+                "type": "token",
+                "data": {"token": token}
+            }
+
+        # Асинхронна оцінка якості
+        if return_evaluation and self.evaluator:
+            # Потокове оцінювання якості
+            loop = asyncio.get_event_loop()
+            evaluation_task = loop.run_in_executor(
+                self.executor,
+                self._evaluate_async,
+                question,
+                full_answer,
+                retrieved_docs
+            )
+
+            yield {
+                "type": "evaluation_pending",
+                "data": {"message": "Відбувається оцінка якості відповіді..."}
+            }
+            
+            # Коли оцінка є готовою, відправляємо результат
+            try:
+                metrics = await evaluation_task
+                yield {
+                    "type": "evaluation",
+                    "data": {
+                        "faithfulness": metrics.faithfulness,
+                        "answer_relevancy": metrics.answer_relevancy,
+                        "context_relevancy": metrics.context_relevancy,
+                        "mrr": metrics.mrr,
+                        "map": metrics.map_score,
+                        "overall_score": metrics.overall_score
+                    }
+                }
+            except Exception as error:
+                print(f"Помилка оцінки якості: {error}")
+                yield {
+                    "type": "evaluation_error",
+                    "data": {"error": str(error)}
+                }
+
+    def _evaluate_async(self, query: str, answer: str, contexts: List[Document]):
+        """Синхронна функція для виконання в Thread Pool"""
+        return self.evaluator.evaluate(
+            query=query,
+            answer=answer,
+            contexts=contexts
+        )
+
+    def __del__(self):
+        """Закриття Thread Pool при завершенні роботи"""
+        if hasattr(self, 'executor'):
+            self.executor.shutdown(wait=False)
 
     def get_stats(self) -> Dict[str, Any]:
         """Надання повної інформації про систему"""

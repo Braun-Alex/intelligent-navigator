@@ -1,9 +1,11 @@
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
+import json
+import asyncio
 
 from .models import (
     QueryRequest,
@@ -33,11 +35,15 @@ rag_pipeline: RAGPipeline = None
 async def lifespan(app: FastAPI):
     """Цикл роботи системи"""
     global rag_pipeline
-    
+
     logger.info("Ініціалізація RAG-системи...")
 
     try:
-        rag_pipeline = RAGPipeline(initialize=True)
+        rag_pipeline = RAGPipeline(
+            initialize=True,
+            use_llm_compression=False,
+            use_llm_validation=False
+        )
         logger.info("RAG-систему ініціалізовано!")
 
     except Exception as error:
@@ -50,8 +56,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="API-навігатор з нормативних документів КНУТШ",
-    description="RAG-система для пошуку інформації в нормативних документах КНУТШ",
-    version="3.0.0",
+    description="RAG-система надання відповідей",
+    version="3.1.0",
     lifespan=lifespan
 )
 
@@ -69,7 +75,8 @@ async def root():
     """Кореневий endpoint"""
     return {
         "message": "API-навігатор з нормативних документів КНУТШ",
-        "version": "2.1.0",
+        "version": "3.1.0",
+        "features": ["streaming", "async_evaluation", "validation"],
         "docs": "/docs"
     }
 
@@ -89,43 +96,71 @@ async def health_check():
     
     return HealthResponse(
         status="healthy" if rag_pipeline else "initializing",
-        version="2.1.0",
+        version="3.1.0",
         rag_initialized=rag_pipeline is not None,
         vector_store_size=vector_store_size
     )
 
 
-@app.post("/query", response_model=QueryResponse, tags=["RAG"])
-async def query_rag(request: QueryRequest):
+@app.get("/query/stream", tags=["RAG"])
+async def query_rag_stream(
+    question: str,
+    return_contexts: bool = True,
+    return_evaluation: bool = False
+):
     """
-    Обробка запиту користувача на інформаційний пошук
+    Streaming-обробка запиту користувача через SSE
     """
     if not rag_pipeline:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="RAG-систему не ініціалізовано!"
         )
+
+    request = QueryRequest(
+        question=question,
+        return_contexts=return_contexts,
+        return_evaluation=return_evaluation
+    )
     
-    try:
-        logger.info(f"Обробка запиту на інформаційний пошук...")
-        
-        result = rag_pipeline.query(
-            question=request.question,
-            return_evaluation=request.return_evaluation,
-            return_contexts=request.return_contexts
-        )
-        
-        logger.info("Запит на інформаційний пошук успішно оброблено!")
+    async def event_generator():
+        try:
+            logger.info(f"Обробка запиту...")
+            
+            async for event in rag_pipeline.query_stream(
+                question=request.question,
+                return_evaluation=request.return_evaluation,
+                return_contexts=request.return_contexts
+            ):
+                # Форматуємо як SSE
+                event_data = json.dumps(event, ensure_ascii=False)
+                yield f"data: {event_data}\n\n"
+                
+                # Даємо можливість іншим задачам виконуватися
+                await asyncio.sleep(0)
+            
+            # Сигнал завершення
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            
+            logger.info("Запит успішно оброблено!")
 
-        return QueryResponse(**result)
-        
-    except Exception as error:
-        logger.error(f"Помилка при обробці запиту на інформаційний пошук: {error}")
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка обробки запиту на інформаційний пошук: {str(error)}"
-        )
+        except Exception as error:
+            logger.error(f"Помилка при обробці запиту: {error}")
+            error_event = json.dumps({
+                "type": "error",
+                "data": {"message": str(error)}
+            })
+            yield f"data: {error_event}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @app.get("/evaluation/report", response_model=EvaluationReportResponse, tags=["Evaluation"])
@@ -146,17 +181,17 @@ async def get_evaluation_report():
         return EvaluationReportResponse(**report)
         
     except Exception as error:
-        logger.error(f"Помилка при наданні комплексного звіту стосовно якості відповідей системи: {error}")
+        logger.error(f"Помилка при наданні звіту: {error}")
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка при наданні комплексного звіту стосовно якості відповідей системи: {str(error)}"
+            detail=f"Помилка при наданні звіту: {str(error)}"
         )
 
 
 @app.get("/documents", response_model=DocumentsListResponse, tags=["Documents"])
 async def list_documents():
-    """Надання списку документів, за якими здійснюється інформаційний пошук"""
+    """Надання списку документів"""
     try:
         docs_path = Path(settings.documents_path)
         
@@ -177,11 +212,11 @@ async def list_documents():
         )
         
     except Exception as error:
-        logger.error(f"Помилка при наданні списку документів, за якими здійснюється інформаційний пошук: {error}")
+        logger.error(f"Помилка при наданні списку документів: {error}")
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка при наданні списку документів, за якими здійснюється інформаційний пошук: {str(error)}"
+            detail=f"Помилка при наданні списку документів: {str(error)}"
         )
 
 
@@ -206,7 +241,10 @@ async def get_statistics():
                 "top_k": stats["top_k"],
                 "rerank_top_k": stats["rerank_top_k"],
                 "bm25_weight": stats["bm25_weight"],
-                "vector_weight": stats["vector_weight"]
+                "vector_weight": stats["vector_weight"],
+                "streaming_enabled": True,
+                "llm_compression": False,
+                "fast_validation": True
             },
             "statistics": {
                 "vector_store_size": stats["vector_store_size"],
@@ -215,11 +253,11 @@ async def get_statistics():
         }
         
     except Exception as error:
-        logger.error(f"Помилка при наданні повної інформації про систему: {error}")
+        logger.error(f"Помилка при наданні статистики: {error}")
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка при наданні повної інформації про систему: {str(error)}"
+            detail=f"Помилка при наданні статистики: {str(error)}"
         )
 
 
@@ -237,11 +275,11 @@ async def get_parameters():
         return ParametersResponse(**params)
 
     except Exception as error:
-        logger.error(f"Помилка при отриманні RAG-параметрів системи: {error}")
+        logger.error(f"Помилка при отриманні параметрів: {error}")
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка при отриманні RAG-параметрів системи: {str(error)}"
+            detail=f"Помилка при отриманні параметрів: {str(error)}"
         )
 
 
@@ -260,13 +298,13 @@ async def update_parameters(request: ParametersUpdateRequest):
         new_params = rag_pipeline.get_current_parameters()
         
         return {
-            "message": "RAG-параметри системи успішно оновлено!",
+            "message": "Параметри успішно оновлено!",
             "status": "success",
             "parameters": new_params
         }
         
     except Exception as error:
-        logger.error(f"Помилка оновлення RAG-параметрів системи: {error}")
+        logger.error(f"Помилка оновлення параметрів: {error}")
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -276,10 +314,7 @@ async def update_parameters(request: ParametersUpdateRequest):
 
 @app.post("/index", tags=["Admin"])
 async def index_documents():
-    """
-    Індексація документів у сховищі
-    Метод використовується для додавання нових документів з перевіркою на дублікати
-    """
+    """Індексація документів у сховищі"""
     if not rag_pipeline:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -289,33 +324,27 @@ async def index_documents():
     try:
         logger.info("Початок індексації документів...")
         
-        # Перевірка поточної кількості документів (до індексації)
         try:
             collection = rag_pipeline.vector_store.get()
             before_count = len(collection.get('ids', []))
-
         except:
             before_count = 0
         
-        # Індексація документів
         rag_pipeline._index_documents()
 
-        # Перевірка поточної кількості документів (після індексації)
         try:
             collection = rag_pipeline.vector_store.get()
             after_count = len(collection.get('ids', []))
-
         except:
             after_count = 0
 
-        # Перебудова ретриверів
-        if self.retriever:
+        if rag_pipeline.retriever:
             rag_pipeline.retriever._build_retrievers()
         
-        logger.info(f"Індексацію завершено. Кількість документів: було {before_count}, стало {after_count}")
+        logger.info(f"Індексацію завершено. Було {before_count}, стало {after_count}")
         
         return {
-            "message": "Індексацію документів успішно виконано!",
+            "message": "Індексацію успішно виконано!",
             "status": "success",
             "documents_before": before_count,
             "documents_after": after_count,
@@ -323,19 +352,17 @@ async def index_documents():
         }
         
     except Exception as error:
-        logger.error(f"Помилка при індексації документів у сховищі: {error}")
+        logger.error(f"Помилка при індексації: {error}")
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка при індексації документів у сховищі: {str(e)}"
+            detail=f"Помилка при індексації: {str(error)}"
         )
 
 
 @app.post("/reset", tags=["Admin"])
 async def reset_vector_store():
-    """
-    Перебудова сховища
-    """
+    """Перебудова сховища"""
     if not rag_pipeline:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -353,10 +380,10 @@ async def reset_vector_store():
         }
         
     except Exception as error:
-        logger.error(f"Помилка при перебудові сховища: {error}")
+        logger.error(f"Помилка при перебудові: {error}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка при перебудові сховища: {str(error)}"
+            detail=f"Помилка при перебудові: {str(error)}"
         )
 
 
