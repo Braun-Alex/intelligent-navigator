@@ -1,7 +1,25 @@
 <template>
   <q-page class="flex flex-center bg-pattern">
+    <!-- Частинки на фоні -->
+    <ParticlesBackground />
+
+    <!-- Система випадкових Easter Eggs -->
+    <RandomEasterEggs ref="easterEggsRef" />
+
+    <!-- Запрошення до гри (маленьке вікно) -->
+    <GameInvitationWidget 
+      :visible="showGameInvitation" 
+      @open-game="openDinoGame"
+    />
+
+    <!-- Графічна міні-гра Dino Runner -->
+    <DinoRunnerGame 
+      :visible="showDinoGame" 
+      @close="closeDinoGame"
+    />
+
     <div class="container q-pa-md">
-      <div class="text-center q-mb-xl" v-if="!hasSearched">
+      <div class="text-center q-mb-xl animated-header" v-if="!hasSearched">
         <div class="icon-wrapper">
           <q-icon
             name="mdi-book-search"
@@ -13,7 +31,7 @@
         <h1 class="text-h3 text-weight-bold q-mt-md q-mb-sm gradient-text">
           Інтелектуальний навігатор
         </h1>
-        <p class="text-h6 text-grey-7">
+        <p class="text-h6 text-grey-7 typing-animation">
           Я тут, щоб Вам допомогти. Ставте запитання
         </p>
       </div>
@@ -33,13 +51,12 @@
                   :placeholder="placeholderText"
                   @focus="isFocused = true"
                   @blur="isFocused = false"
-                  @keyup.enter.ctrl="handleSearch"
                   class="search-input"
                   :input-style="{ minHeight: '56px' }"
                   :disable="loading"
                 >
                   <template v-slot:prepend>
-                    <q-icon name="search" size="28px" color="primary" />
+                    <q-icon name="search" size="28px" color="primary" class="search-icon-pulse" />
                   </template>
                   <template v-slot:append>
                     <q-btn
@@ -49,6 +66,7 @@
                       icon="close"
                       v-if="question && !loading"
                       @click="question = ''"
+                      class="hover-rotate"
                     />
                   </template>
                   <template v-slot:hint>
@@ -66,13 +84,14 @@
                       color="primary"
                       left-label
                       :disable="loading"
+                      class="animated-toggle"
                     />
                     <q-toggle
                       v-model="showEvaluation"
                       label="Оцінити якість"
                       color="secondary"
                       left-label
-                      class="q-ml-md"
+                      class="q-ml-md animated-toggle"
                       :disable="loading"
                     />
                   </div>
@@ -88,7 +107,7 @@
                       @click="handleSearch"
                       :loading="loading"
                       :disable="!question.trim() || loading"
-                      class="search-button"
+                      class="search-button glowing-button"
                     >
                       <template v-slot:loading>
                         <div class="row items-center">
@@ -103,7 +122,6 @@
             </div>
           </q-card-section>
 
-          <!-- Прогрес-бар -->
           <q-linear-progress
             v-if="loading"
             indeterminate
@@ -112,18 +130,38 @@
           />
         </q-card>
 
+        <!-- Інтерактивний прогрес -->
+        <InteractiveProgress
+          :visible="loading"
+          :stage="currentProcessStage"
+        />
+
         <!-- Інформація про швидкість -->
-        <div class="q-mt-md" v-if="responseTime && !loading">
-          <q-chip
-            outline
-            color="positive"
-            text-color="positive"
-            icon="mdi-speedometer"
-            size="sm"
-          >
-            Час відповіді: {{ responseTime }} с
-          </q-chip>
-        </div>
+        <transition name="fade">
+          <div class="q-mt-md" v-if="responseTime && !loading">
+            <q-chip
+              outline
+              color="positive"
+              text-color="positive"
+              icon="mdi-speedometer"
+              size="sm"
+              class="bounce-in"
+            >
+              Час відповіді: {{ responseTime }} с
+            </q-chip>
+            <q-chip
+              outline
+              color="info"
+              text-color="info"
+              icon="mdi-file-multiple"
+              size="sm"
+              class="q-ml-sm bounce-in"
+              v-if="contexts.length > 0"
+            >
+              {{ contexts.length }} джерел
+            </q-chip>
+          </div>
+        </transition>
       </div>
 
       <!-- Секція відповіді -->
@@ -134,42 +172,41 @@
       >
         <div v-if="hasSearched" class="results-container">
           <!-- Повідомлення про валідацію -->
-          <q-banner
-            v-if="validationFailed"
-            class="bg-negative text-white q-mb-md validation-banner"
-            rounded
-          >
-            <template v-slot:avatar>
-              <q-icon name="mdi-shield-alert" size="48px" />
-            </template>
-            <div class="text-h6 text-weight-bold">Запит відхилено</div>
-            <div class="text-body1 q-mt-sm">{{ validationReason }}</div>
-          </q-banner>
+          <transition name="shake">
+            <q-banner
+              v-if="validationFailed"
+              class="bg-negative text-white q-mb-md validation-banner"
+              rounded
+            >
+              <template v-slot:avatar>
+                <q-icon name="mdi-shield-alert" size="48px" class="shake-animation" />
+              </template>
+              <div class="text-h6 text-weight-bold">Запит відхилено</div>
+              <div class="text-body1 q-mt-sm">{{ validationReason }}</div>
+            </q-banner>
+          </transition>
 
           <!-- Відповідь -->
-          <q-card flat bordered class="answer-card q-mb-md" v-if="!validationFailed">
+          <q-card flat bordered class="answer-card q-mb-md card-hover" v-if="!validationFailed">
             <q-card-section>
               <div class="row items-center q-mb-md">
-                <q-icon name="mdi-comment-quote" size="32px" color="primary" class="q-mr-sm" />
+                <q-icon name="mdi-comment-quote" size="32px" color="primary" class="q-mr-sm icon-bounce" />
                 <span class="text-h5 text-weight-bold">Відповідь</span>
                 <q-space />
-                <!-- Індикатор -->
                 <q-chip
                   v-if="isStreaming"
                   color="primary"
                   text-color="white"
                   size="sm"
                   icon="mdi-wifi"
+                  class="streaming-chip"
                 >
                   <q-spinner-dots color="white" size="16px" class="q-mr-xs" />
                   Генерується...
                 </q-chip>
               </div>
               
-              <!-- Відповідь з анімацією появи -->
               <div class="answer-content streaming-text" v-html="formattedAnswer"></div>
-              
-              <!-- Курсор для streaming ефекту -->
               <span v-if="isStreaming" class="streaming-cursor">|</span>
             </q-card-section>
 
@@ -180,7 +217,6 @@
                 Оцінка якості відповіді
               </div>
 
-              <!-- Стан оцінки якості -->
               <div v-if="evaluationPending && !evaluation" class="text-center q-pa-md">
                 <q-spinner-dots color="primary" size="40px" />
                 <div class="text-body2 text-grey-7 q-mt-sm">
@@ -188,131 +224,136 @@
                 </div>
               </div>
 
-              <!-- Результати оцінки -->
-              <div v-if="evaluation">
-                <q-banner
-                  :class="`q-mb-md quality-banner quality-${overallQuality.level}`"
-                  rounded
-                >
-                  <template v-slot:avatar>
-                    <q-icon
-                      :name="overallQuality.icon"
-                      :color="overallQuality.color"
-                      size="48px"
-                    />
-                  </template>
-                  <div class="text-h6 text-weight-bold">{{ overallQuality.title }}</div>
-                  <div class="text-body2 q-mt-xs">{{ overallQuality.description }}</div>
-                </q-banner>
+              <transition name="fade">
+                <div v-if="evaluation">
+                  <q-banner
+                    :class="`q-mb-md quality-banner quality-${overallQuality.level}`"
+                    rounded
+                  >
+                    <template v-slot:avatar>
+                      <q-icon
+                        :name="overallQuality.icon"
+                        :color="overallQuality.color"
+                        size="48px"
+                        class="pulse-animation"
+                      />
+                    </template>
+                    <div class="text-h6 text-weight-bold">{{ overallQuality.title }}</div>
+                    <div class="text-body2 q-mt-xs">{{ overallQuality.description }}</div>
+                  </q-banner>
 
-                <div class="row q-col-gutter-md">
-                  <div class="col-6 col-md-4 col-lg-2" v-for="(metric, key) in metricsDisplay" :key="key">
-                    <q-card flat class="metric-card">
-                      <q-card-section class="text-center">
-                        <div class="text-h4 text-weight-bold" :class="getMetricColor(metric.value)">
-                          {{ (metric.value * 100).toFixed(0) }}%
-                        </div>
-                        <div class="text-caption text-weight-bold text-grey-8">{{ metric.label }}</div>
-                        <q-linear-progress
-                          :value="metric.value"
-                          :color="getMetricColorName(metric.value)"
-                          size="8px"
-                          rounded
-                          class="q-mt-sm"
-                        />
-                      </q-card-section>
-                    </q-card>
+                  <div class="row q-col-gutter-md">
+                    <div class="col-6 col-md-4 col-lg-2" v-for="(metric, key) in metricsDisplay" :key="key">
+                      <q-card flat class="metric-card card-hover">
+                        <q-card-section class="text-center">
+                          <div class="text-h4 text-weight-bold counter-animation" :class="getMetricColor(metric.value)">
+                            {{ (metric.value * 100).toFixed(0) }}%
+                          </div>
+                          <div class="text-caption text-weight-bold text-grey-8">{{ metric.label }}</div>
+                          <q-linear-progress
+                            :value="metric.value"
+                            :color="getMetricColorName(metric.value)"
+                            size="8px"
+                            rounded
+                            class="q-mt-sm"
+                          />
+                        </q-card-section>
+                      </q-card>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </transition>
             </q-card-section>
           </q-card>
 
           <!-- Контексти -->
-          <q-card flat bordered class="contexts-card" v-if="showContexts && contexts.length > 0">
+          <q-card flat bordered class="contexts-card card-hover" v-if="showContexts && contexts.length > 0">
             <q-card-section>
               <div class="row items-center q-mb-lg">
-                <q-icon name="mdi-file-document-multiple" size="32px" color="secondary" class="q-mr-sm" />
+                <q-icon name="mdi-file-document-multiple" size="32px" color="secondary" class="q-mr-sm icon-bounce" />
                 <span class="text-h5 text-weight-bold">Знайдені джерела ({{ contexts.length }})</span>
               </div>
 
               <div class="q-gutter-md">
-                <q-card
-                  v-for="(context, idx) in contexts"
-                  :key="idx"
-                  flat
-                  bordered
-                  class="source-card"
-                >
-                  <q-card-section class="source-header bg-grey-2">
-                    <div class="row items-center justify-between">
-                      <div class="col">
-                        <div class="row items-center q-gutter-sm">
-                          <q-icon
-                            :name="getSourceIcon(context.source)"
-                            size="24px"
-                            :color="getSourceColor(idx)"
-                          />
-                          <div>
-                            <div class="text-subtitle1 text-weight-bold">
-                              {{ formatSourceName(context.source) }}
+                <transition-group name="stagger-fade">
+                  <q-card
+                    v-for="(context, idx) in contexts"
+                    :key="idx"
+                    flat
+                    bordered
+                    class="source-card card-hover"
+                  >
+                    <q-card-section class="source-header bg-grey-2">
+                      <div class="row items-center justify-between">
+                        <div class="col">
+                          <div class="row items-center q-gutter-sm">
+                            <q-icon
+                              :name="getSourceIcon(context.source)"
+                              size="24px"
+                              :color="getSourceColor(idx)"
+                              class="icon-pulse"
+                            />
+                            <div>
+                              <div class="text-subtitle1 text-weight-bold">
+                                {{ formatSourceName(context.source) }}
+                              </div>
                             </div>
                           </div>
                         </div>
+                        <div class="col-auto">
+                          <q-badge
+                            :color="getSourceColor(idx)"
+                            text-color="white"
+                            :label="`${idx + 1}`"
+                            class="badge-pulse"
+                          />
+                        </div>
                       </div>
-                      <div class="col-auto">
-                        <q-badge
-                          :color="getSourceColor(idx)"
-                          text-color="white"
-                          :label="`${idx + 1}`"
-                        />
-                      </div>
-                    </div>
-                  </q-card-section>
+                    </q-card-section>
 
-                  <q-card-section>
-                    <div
-                      class="text-body2 text-grey-8 context-preview"
-                      v-html="highlightKeyTerms(context.preview, context.key_terms || [])"
-                    >
-                    </div>
-                  </q-card-section>
-
-                  <q-expansion-item
-                    v-if="context.content && context.content.length > 300"
-                    icon="mdi-eye"
-                    label="Переглянути повний текст"
-                    header-class="text-primary"
-                  >
-                    <q-card-section class="bg-grey-1">
+                    <q-card-section>
                       <div
-                        class="text-body2"
-                        style="white-space: pre-wrap; line-height: 1.6;"
-                        v-html="highlightKeyTerms(context.content, context.key_terms || [])"
+                        class="text-body2 text-grey-8 context-preview"
+                        v-html="highlightKeyTerms(context.preview, context.key_terms || [])"
                       >
                       </div>
                     </q-card-section>
-                  </q-expansion-item>
 
-                  <!-- Метадані -->
-                  <q-card-section class="q-pt-none">
-                    <q-separator class="q-mb-sm" />
-                    <div class="row q-gutter-sm text-caption text-grey-7">
-                      <q-chip dense square icon="mdi-text-box" size="sm">
-                        {{ context.length || 0 }} символів
-                      </q-chip>
-                      <q-chip
-                        dense
-                        square
-                        icon="mdi-file-document"
-                        size="sm"
-                        v-if="context.chunk_index !== undefined"
-                      >
-                        Фрагмент {{ context.chunk_index + 1 }}
-                      </q-chip>
-                    </div>
-                  </q-card-section>
-                </q-card>
+                    <q-expansion-item
+                      v-if="context.content && context.content.length > 300"
+                      icon="mdi-eye"
+                      label="Переглянути повний текст"
+                      header-class="text-primary"
+                    >
+                      <q-card-section class="bg-grey-1">
+                        <div
+                          class="text-body2"
+                          style="white-space: pre-wrap; line-height: 1.6;"
+                          v-html="highlightKeyTerms(context.content, context.key_terms || [])"
+                        >
+                        </div>
+                      </q-card-section>
+                    </q-expansion-item>
+
+                    <q-card-section class="q-pt-none">
+                      <q-separator class="q-mb-sm" />
+                      <div class="row q-gutter-sm text-caption text-grey-7">
+                        <q-chip dense square icon="mdi-text-box" size="sm">
+                          {{ context.length || 0 }} символів
+                        </q-chip>
+                        <q-chip
+                          dense
+                          square
+                          icon="mdi-file-document"
+                          size="sm"
+                          v-if="context.chunk_index !== undefined"
+                        >
+                          Фрагмент {{ context.chunk_index + 1 }}
+                        </q-chip>
+                      </div>
+                    </q-card-section>
+                  </q-card>
+                </transition-group>
               </div>
             </q-card-section>
           </q-card>
@@ -323,12 +364,25 @@
 </template>
 
 <script>
-import { defineComponent, ref, computed } from 'vue'
+import { defineComponent, ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useQuasar } from 'quasar'
 import { marked } from 'marked'
+import ParticlesBackground from '@/components/ParticlesBackground.vue'
+import RandomEasterEggs from '@/components/RandomEasterEggs.vue'
+import GameInvitationWidget from '@/components/GameInvitationWidget.vue'
+import DinoRunnerGame from '@/components/DinoRunnerGame.vue'
+import InteractiveProgress from '@/components/InteractiveProgress.vue'
 
 export default defineComponent({
   name: 'IndexPage',
+
+  components: {
+    ParticlesBackground,
+    RandomEasterEggs,
+    GameInvitationWidget,
+    DinoRunnerGame,
+    InteractiveProgress
+  },
 
   setup() {
     const $q = useQuasar()
@@ -348,6 +402,10 @@ export default defineComponent({
     const streamingStatus = ref('Перевірка...')
     const responseTime = ref(null)
     const startTime = ref(null)
+    const showGameInvitation = ref(false)
+    const showDinoGame = ref(false)
+    const currentProcessStage = ref('validation')
+    const easterEggsRef = ref(null)
 
     const placeholderText = computed(() => {
       const placeholders = [
@@ -445,6 +503,29 @@ export default defineComponent({
       return 'negative'
     }
 
+    // Відкриття гри із запрошення
+    const openDinoGame = () => {
+      showDinoGame.value = true
+      showGameInvitation.value = false
+    }
+
+    // Закриття гри
+    const closeDinoGame = () => {
+      showDinoGame.value = false
+      // Якщо все ще йде обробка - показуємо запрошення знову
+      if (loading.value) {
+        showGameInvitation.value = true
+      }
+    }
+
+    // Обробка комбінації клавіш Ctrl + Enter для пошуку
+    const handleCtrlEnter = (event) => {
+      if (event.ctrlKey && event.key === 'Enter') {
+        event.preventDefault()
+        handleSearch()
+      }
+    }
+
     const handleSearch = async () => {
       if (!question.value.trim()) {
         $q.notify({
@@ -455,7 +536,11 @@ export default defineComponent({
         return
       }
 
-      // Скидаємо стан
+      // Повідомляємо Easter Eggs про новий запит
+      if (easterEggsRef.value) {
+        easterEggsRef.value.onQuerySubmitted()
+      }
+
       loading.value = true
       isStreaming.value = false
       hasSearched.value = true
@@ -468,9 +553,16 @@ export default defineComponent({
       responseTime.value = null
       streamingStatus.value = 'Перевірка запиту...'
       startTime.value = Date.now()
+      currentProcessStage.value = 'validation'
+
+      // Показуємо запрошення до гри через дві секунди
+      const gameInvitationTimer = setTimeout(() => {
+        if (loading.value) {
+          showGameInvitation.value = true
+        }
+      }, 2000)
 
       try {
-        // Використовуємо SSE endpoint
         const apiUrl = import.meta.env.DEV ? '/api' : 'http://localhost:8000'
         const eventSource = new EventSource(
           `${apiUrl}/query/stream?` + new URLSearchParams({
@@ -487,11 +579,15 @@ export default defineComponent({
             switch (data.type) {
               case 'validation':
                 streamingStatus.value = 'Валідація пройдена'
+                currentProcessStage.value = 'retrieval'
                 if (!data.data.is_valid) {
                   validationFailed.value = true
                   validationReason.value = data.data.reason
                   loading.value = false
                   isStreaming.value = false
+                  showGameInvitation.value = false
+                  showDinoGame.value = false
+                  clearTimeout(gameInvitationTimer)
                   eventSource.close()
                   
                   $q.notify({
@@ -504,6 +600,7 @@ export default defineComponent({
 
               case 'contexts':
                 streamingStatus.value = 'Знайдено джерела'
+                currentProcessStage.value = 'generation'
                 contexts.value = data.data.contexts
                 break
 
@@ -517,6 +614,7 @@ export default defineComponent({
 
               case 'evaluation_pending':
                 evaluationPending.value = true
+                currentProcessStage.value = 'evaluation'
                 streamingStatus.value = 'Оцінка якості...'
                 break
 
@@ -533,10 +631,20 @@ export default defineComponent({
               case 'done':
                 isStreaming.value = false
                 loading.value = false
+                showGameInvitation.value = false
+                clearTimeout(gameInvitationTimer)
                 eventSource.close()
                 
                 const elapsed = ((Date.now() - startTime.value) / 1000).toFixed(1)
                 responseTime.value = elapsed
+                
+                // Повідомляємо Easter Eggs про успішну відповідь
+                if (easterEggsRef.value) {
+                  easterEggsRef.value.onSuccessfulResponse({
+                    responseTime: parseFloat(elapsed),
+                    quality: evaluation.value?.overall_score || 0
+                  })
+                }
                 
                 $q.notify({
                   type: 'positive',
@@ -549,6 +657,9 @@ export default defineComponent({
               case 'error':
                 loading.value = false
                 isStreaming.value = false
+                showGameInvitation.value = false
+                showDinoGame.value = false
+                clearTimeout(gameInvitationTimer)
                 eventSource.close()
                 
                 $q.notify({
@@ -567,6 +678,9 @@ export default defineComponent({
           console.error('SSE-помилка:', error)
           loading.value = false
           isStreaming.value = false
+          showGameInvitation.value = false
+          showDinoGame.value = false
+          clearTimeout(gameInvitationTimer)
           eventSource.close()
           
           $q.notify({
@@ -580,6 +694,9 @@ export default defineComponent({
         console.error('Помилка пошуку:', error)
         loading.value = false
         isStreaming.value = false
+        showGameInvitation.value = false
+        showDinoGame.value = false
+        clearTimeout(gameInvitationTimer)
         
         $q.notify({
           type: 'negative',
@@ -632,6 +749,15 @@ export default defineComponent({
       return highlightedText
     }
 
+    onMounted(() => {
+      // Додаємо обробник комбінації клавіш Ctrl + Enter
+      document.addEventListener('keydown', handleCtrlEnter)
+    })
+
+    onBeforeUnmount(() => {
+      document.removeEventListener('keydown', handleCtrlEnter)
+    })
+
     return {
       question,
       answer,
@@ -648,6 +774,10 @@ export default defineComponent({
       validationReason,
       streamingStatus,
       responseTime,
+      showGameInvitation,
+      showDinoGame,
+      currentProcessStage,
+      easterEggsRef,
       placeholderText,
       formattedAnswer,
       metricsDisplay,
@@ -658,16 +788,211 @@ export default defineComponent({
       formatSourceName,
       getSourceIcon,
       getSourceColor,
-      highlightKeyTerms
+      highlightKeyTerms,
+      openDinoGame,
+      closeDinoGame
     }
   }
 })
 </script>
 
 <style lang="scss" scoped>
-// Попередні стилі залишаються...
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
-// Додаткові стилі для streaming
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.animated {
+  animation-duration: 0.5s;
+  animation-fill-mode: both;
+}
+
+.fadeIn {
+  animation-name: fadeIn;
+}
+
+.fadeOut {
+  animation-name: fadeOut;
+}
+
+.animated-header {
+  animation: fadeIn 1s ease;
+}
+
+.typing-animation {
+  animation: fadeIn 1.5s ease;
+}
+
+.search-icon-pulse {
+  animation: pulse-scale 2s infinite;
+}
+
+@keyframes pulse-scale {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.hover-rotate {
+  transition: transform 0.3s ease;
+  &:hover {
+    transform: rotate(90deg);
+  }
+}
+
+.animated-toggle {
+  transition: all 0.3s ease;
+  &:hover {
+    transform: scale(1.05);
+  }
+}
+
+.glowing-button {
+  position: relative;
+  overflow: hidden;
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+  &:hover::before {
+    width: 300px;
+    height: 300px;
+  }
+}
+
+.card-hover {
+  transition: all 0.3s ease;
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+}
+
+.icon-bounce {
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.icon-pulse {
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.badge-pulse {
+  animation: badge-pulse 2s infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.streaming-chip {
+  animation: glow 1.5s infinite;
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(25, 118, 210, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(25, 118, 210, 0.8); }
+}
+
+.counter-animation {
+  animation: count-up 0.5s ease-out;
+}
+
+@keyframes count-up {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+.bounce-in {
+  animation: bounce-in 0.5s ease;
+}
+
+@keyframes bounce-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.shake-animation {
+  animation: shake 0.5s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-10px); }
+  75% { transform: translateX(10px); }
+}
+
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s;
+}
+
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
+
+.shake-enter-active {
+  animation: shake 0.5s ease;
+}
+
+.stagger-fade-enter-active {
+  transition: all 0.5s ease;
+}
+
+.stagger-fade-enter-from {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+
+.stagger-fade-move {
+  transition: transform 0.5s ease;
+}
+
 .streaming-text {
   position: relative;
 }
@@ -704,12 +1029,18 @@ export default defineComponent({
 }
 
 :deep(.highlight-term) {
-  background-color: #fff59d;
-  padding: 2px 4px;
-  border-radius: 3px;
+  background: linear-gradient(120deg, #fff59d 0%, #fdd835 100%);
+  padding: 2px 6px;
+  border-radius: 4px;
   font-weight: 600;
   color: #000;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: linear-gradient(120deg, #fdd835 0%, #f9a825 100%);
+    transform: scale(1.05);
+  }
 }
 
 .validation-banner {
@@ -717,14 +1048,9 @@ export default defineComponent({
   animation: shake 0.5s ease;
 }
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-5px); }
-  75% { transform: translateX(5px); }
-}
-
 .quality-banner {
   border-left: 4px solid;
+  transition: all 0.3s ease;
 
   &.quality-excellent {
     background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(76, 175, 80, 0.05) 100%);
@@ -745,5 +1071,20 @@ export default defineComponent({
     background: linear-gradient(135deg, rgba(244, 67, 54, 0.1) 0%, rgba(244, 67, 54, 0.05) 100%);
     border-left-color: #F44336;
   }
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #1976D2 0%, #2196F3 50%, #64B5F6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-shift 3s ease infinite;
+  background-size: 200% 200%;
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 </style>

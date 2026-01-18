@@ -1,6 +1,8 @@
 // Глобальні стилі застосунку
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
 
+@import './animations.scss';
+
 body {
   font-family: 'Roboto', sans-serif;
 }
@@ -10,7 +12,7 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-// Кастомний scrollbar
+// Власноруч реалізований Scrollbar
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
