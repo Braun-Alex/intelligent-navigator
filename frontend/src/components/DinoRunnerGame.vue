@@ -13,10 +13,10 @@
               {{ score }}
             </q-chip>
             <q-chip color="white" text-color="secondary" icon="mdi-trophy" class="q-ml-sm">
-              🏆 {{ highScore }}
+              {{ highScore }}
             </q-chip>
             <q-chip color="white" text-color="accent" icon="mdi-speedometer" class="q-ml-sm">
-              ⚡ {{ Math.round(gameSpeed) }}
+              {{ Math.round(gameSpeed) }}
             </q-chip>
           </div>
           <div class="col-auto q-ml-md">
@@ -64,7 +64,7 @@
           </div>
           <div class="text-caption text-grey-7 q-mt-md">
             Уникайте кактусів та ворожих динозаврів!<br>
-            Стежте за погодою! ⚡
+            Крім того, стежте за погодою!
           </div>
           <q-btn
             unelevated
@@ -82,29 +82,30 @@
           :width="canvasWidth"
           :height="canvasHeight"
           class="game-canvas"
-          :class="{ 'canvas-active': gameStarted && !gameOver }"
+          :class="{
+            'canvas-active': gameStarted && !gameOver,
+            'shake-effect': lightning.active
+          }"
         ></canvas>
 
         <div v-if="gameOver" class="game-over-overlay">
           <div class="game-over-content">
             <div class="happy-dino-game-over">
               <div class="dino-body-go"></div>
-              <div class="dino-head-go"></div>
-              <div class="dino-eye-go eye-left"></div>
-              <div class="dino-eye-go eye-right"></div>
+              <div class="dino-head-go">
+                <div class="dino-eye-go eye-left"></div>
+                <div class="dino-eye-go eye-right"></div>
+              </div>
               <div class="dino-sad-mouth"></div>
               <div class="dino-arm arm-left"></div>
               <div class="dino-arm arm-right"></div>
             </div>
             
-            <div class="text-h5 text-weight-bold q-mt-md">{{ getGameOverMessage() }}</div>
+            <div class="text-h5 text-weight-bold q-mt-md">{{ gameOverMessage }}</div>
             <div class="text-h3 text-weight-bold text-primary q-mt-sm">{{ score }}</div>
-            <div class="text-caption text-grey-7">Відстань: {{ Math.round(distance) }}м</div>
-            <div v-if="score > highScore" class="text-positive q-mt-sm">
-              🎉 Новий рекорд!
-            </div>
-            <div v-else-if="score > highScore * 0.9" class="text-info q-mt-sm">
-              💪 Майже рекорд! Ще {{ highScore - score }} очок!
+            <div class="text-caption text-grey-7">Пройдена відстань: {{ Math.round(distance) }} м</div>
+            <div v-if="isNewRecord" class="text-positive q-mt-sm">
+              🎉 Новий рекорд! 🎉
             </div>
             <q-btn
               unelevated
@@ -146,7 +147,7 @@
 </template>
 
 <script>
-import { defineComponent, ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
+import { defineComponent, reactive, ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 
 export default defineComponent({
   name: 'DinoRunnerGame',
@@ -173,6 +174,7 @@ export default defineComponent({
     const distance = ref(0)
     const gameSpeed = ref(4)
     const isFullscreen = ref(false)
+    const isNewRecord = ref(false)
     const deathReason = ref('obstacle')
 
     let ctx = null
@@ -197,13 +199,13 @@ export default defineComponent({
     const obstacles = []
     const enemies = []
     const particles = [] // Для дощу
-    const lightning = { active: false, x: 0, alpha: 0 }
+    const lightning = reactive({ active: false, x: 0, alpha: 0 })
     
     let obstacleTimer = 0
     let enemyTimer = 0
     let weatherTimer = 0
     let difficultyTimer = 0
-    let currentWeather = 'clear' // clear, rain, storm
+    const currentWeather = ref('clear') // clear, rain, storm
     
     const loadHighScore = () => {
       const saved = localStorage.getItem('dinoGameHighScore')
@@ -214,8 +216,11 @@ export default defineComponent({
 
     const saveHighScore = () => {
       if (score.value > highScore.value) {
+        isNewRecord.value = true
         highScore.value = score.value
         localStorage.setItem('dinoGameHighScore', highScore.value.toString())
+      } else {
+        isNewRecord.value = false
       }
     }
 
@@ -228,18 +233,22 @@ export default defineComponent({
     }
 
     const weatherEmoji = computed(() => {
-      if (currentWeather === 'storm') return '⚡'
-      if (currentWeather === 'rain') return '🌧️'
-      return '☀️'
+      switch (currentWeather.value) {
+        case 'storm': return '⚡'
+        case 'rain': return '🌧️'
+        default: return '☀️'
+      }
     })
 
     const weatherClass = computed(() => {
-      if (currentWeather === 'storm') return 'text-warning'
-      if (currentWeather === 'rain') return 'text-info'
-      return 'text-positive'
+      switch (currentWeather.value) {
+        case 'storm': return 'text-warning'
+        case 'rain': return 'text-info'
+        default: return 'text-positive'
+      }
     })
 
-    const getGameOverMessage = () => {
+    const gameOverMessage = computed(() => {
       const messages = {
         obstacle: ['Напоролися на кактус!', 'Повезе наступного разу!', 'Спробуйте ще!'],
         enemy: ['Вас схопив ворожий динозавр!', 'Будьте уважніші до ворогів!', 'Майже вдалося оминути!'],
@@ -247,7 +256,7 @@ export default defineComponent({
       }
       const options = messages[deathReason.value] || messages.obstacle
       return options[Math.floor(Math.random() * options.length)]
-    }
+    });
 
     const startGame = () => {
       gameStarted.value = true
@@ -257,6 +266,9 @@ export default defineComponent({
       enemiesAvoided.value = 0
       distance.value = 0
       gameSpeed.value = 4
+      internalDistance = 0
+      internalScore = 0
+      isNewRecord.value = false
       obstacles.length = 0
       enemies.length = 0
       particles.length = 0
@@ -264,13 +276,14 @@ export default defineComponent({
       enemyTimer = 0
       weatherTimer = 0
       difficultyTimer = 0
-      currentWeather = 'clear'
+      currentWeather.value = 'clear'
       deathReason.value = 'obstacle'
       
       player.y = 150
       player.velocityY = 0
       keysPressed = {}
 
+      lastTime = performance.now()
       gameLoop()
     }
 
@@ -297,48 +310,58 @@ export default defineComponent({
     }
 
     const createObstacle = () => {
-      // Різні типи перешкод з різними позиціями по Y
-      const types = [
-        { width: 20, height: 40, color: '#F44336', y: canvasHeight - 80 }, // Низький
-        { width: 25, height: 60, color: '#FF9800', y: canvasHeight - 100 }, // Середній
-        { width: 30, height: 35, color: '#E91E63', y: 100 }, // Високий
-        { width: 20, height: 45, color: '#9C27B0', y: 150 }, // Центр
-      ]
+      const colors = ['#F44336', '#FF9800', '#E91E63', '#9C27B0']
       
       // В залежності від погоди - більше або менше перешкод
-      const weatherMultiplier = currentWeather === 'rain' ? 1.5 : 1
-      
+      let weatherMultiplier = 1
+      if (currentWeather.value === 'rain') {
+        weatherMultiplier = 2
+      } else if (currentWeather.value === 'storm') {
+        weatherMultiplier = 3
+      }
+
       if (Math.random() < 0.3 * weatherMultiplier) {
-        const type = types[Math.floor(Math.random() * types.length)]
+        const randomHeight = 30 + Math.random() * 30
+        const randomY = 50 + Math.random() * (canvasHeight - randomHeight - 20)
+
         obstacles.push({
           x: canvasWidth,
-          y: type.y,
-          width: type.width,
-          height: type.height,
-          color: type.color,
+          y: randomY,
+          width: 20 + Math.random() * 15,
+          height: randomHeight,
+          color: colors[Math.floor(Math.random() * colors.length)],
           scored: false
-        })
+        });
       }
     }
 
     const createEnemy = () => {
+      // В залежності від погоди - більше або менше ворожих динозаврів
+      let weatherMultiplier = 1
+      if (currentWeather.value === 'rain') {
+        weatherMultiplier = 1.5
+      } else if (currentWeather.value === 'storm') {
+        weatherMultiplier = 2.3
+      }
+
       // Ворожі динозаври - рухаються вниз або вгору
-      if (Math.random() < 0.15) { // Шанс 15%
-        const startY = 80 + Math.random() * 140
+      if (Math.random() < 0.3) { // Шанс 30%
+        const randomY = 50 + Math.random() * (canvasHeight - 100)
+
         enemies.push({
           x: canvasWidth,
-          y: startY,
+          y: randomY,
           width: 35,
           height: 35,
           color: '#D32F2F',
-          velocityY: (Math.random() - 0.5) * 3, // Випадковий рух
+          velocityY: (Math.random() - 0.5) * (3 + weatherMultiplier), // Випадковий рух
           scored: false
         })
       }
     }
 
     const createRainParticles = () => {
-      if (currentWeather === 'rain' || currentWeather === 'storm') {
+      if (currentWeather.value === 'rain' || currentWeather.value === 'storm') {
         for (let i = 0; i < 3; i++) {
           particles.push({
             x: canvasWidth + Math.random() * 100,
@@ -351,17 +374,15 @@ export default defineComponent({
     }
 
     const triggerLightning = () => {
-      if (currentWeather === 'storm' && Math.random() < 0.02) { // Шанс 2% на кожен кадр
+      if (currentWeather.value === 'storm' && Math.random() < 0.009) { // Шанс 0.9% на кожен кадр
         lightning.active = true
-        lightning.x = player.x - 50 + Math.random() * 100
+        lightning.x = Math.random() * canvasWidth
         lightning.alpha = 1
-        
-        // Перевірка, чи вдарила блискавка у гравця
-        if (Math.abs(lightning.x - player.x) < 30) {
-          gameOver.value = true
-          gameStarted.value = false
-          deathReason.value = 'lightning'
-          saveHighScore()
+    
+        for (let i = 0; i < 3; i++) {
+            setTimeout(() => {
+                if (gameStarted.value && !gameOver.value) createObstacle()
+            }, i * 200);
         }
       }
     }
@@ -377,11 +398,11 @@ export default defineComponent({
         const rand = Math.random()
         
         if (rand < stormChance) {
-          currentWeather = 'storm'
+          currentWeather.value = 'storm'
         } else if (rand < stormChance + 0.3) {
-          currentWeather = 'rain'
+          currentWeather.value = 'rain'
         } else {
-          currentWeather = 'clear'
+          currentWeather.value = 'clear'
         }
         
         weatherTimer = 0
@@ -467,7 +488,7 @@ export default defineComponent({
 
     const drawWeather = () => {
       // Дощ
-      if (currentWeather === 'rain' || currentWeather === 'storm') {
+      if (currentWeather.value === 'rain' || currentWeather.value === 'storm') {
         ctx.strokeStyle = 'rgba(100, 150, 200, 0.5)'
         ctx.lineWidth = 1
         particles.forEach(p => {
@@ -499,10 +520,10 @@ export default defineComponent({
     const drawBackground = () => {
       // Небо (змінюється з погодою)
       let skyColor1, skyColor2
-      if (currentWeather === 'storm') {
+      if (currentWeather.value === 'storm') {
         skyColor1 = '#5a6c7d'
         skyColor2 = '#8a9ba8'
-      } else if (currentWeather === 'rain') {
+      } else if (currentWeather.value === 'rain') {
         skyColor1 = '#87CEEB'
         skyColor2 = '#B0C4DE'
       } else {
@@ -516,8 +537,8 @@ export default defineComponent({
       ctx.fillStyle = gradient
       ctx.fillRect(0, 0, canvasWidth, canvasHeight)
       
-      // Хмари (якщо не гроза)
-      if (currentWeather !== 'storm') {
+      // Хмари (але не гроза)
+      if (currentWeather.value !== 'storm') {
         const cloudOffset = (Date.now() / 50) % canvasWidth
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
         ctx.beginPath()
@@ -527,6 +548,9 @@ export default defineComponent({
         ctx.fill()
       }
     }
+
+    let internalDistance = 0
+    let internalScore = 0
 
     const gameLoop = (timestamp = 0) => {
       if (!ctx || gameOver.value) return
@@ -656,8 +680,13 @@ export default defineComponent({
         }
       }
 
-      distance.value += gameSpeed.value * 0.02
-      score.value = Math.floor(distance.value)
+      internalDistance += gameSpeed.value * 0.02
+
+      const newScore = Math.floor(internalDistance)
+      if (newScore !== score.value) {
+        score.value = newScore
+        distance.value = newScore
+      }
 
       animationId = requestAnimationFrame(gameLoop)
     }
@@ -714,13 +743,15 @@ export default defineComponent({
       distance,
       gameSpeed,
       isFullscreen,
+      isNewRecord,
+      lightning,
       weatherEmoji,
       weatherClass,
       startGame,
       restartGame,
       toggleFullscreen,
       closeGame,
-      getGameOverMessage
+      gameOverMessage
     }
   }
 })
@@ -955,6 +986,17 @@ export default defineComponent({
     right: 15px;
     transform: rotate(20deg);
   }
+}
+
+@keyframes shake-animation {
+  10%, 90% { transform: translate3d(-2px, 0, 0); }
+  20%, 80% { transform: translate3d(4px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+  40%, 60% { transform: translate3d(6px, 0, 0); }
+}
+
+.shake-effect {
+  animation: shake-animation 0.2s cubic-bezier(.36,.07,.19,.97) both;
 }
 
 @keyframes bounce {
