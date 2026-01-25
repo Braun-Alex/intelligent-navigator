@@ -5,7 +5,7 @@
       <q-card-section class="game-header bg-gradient-dino text-white">
         <div class="row items-center justify-between">
           <div class="col">
-            <div class="text-h6">🦖 Dino Runner 🦖</div>
+            <div class="text-h6">Dino Runner</div>
             <div class="text-caption">Біжіть і оглядайтеся лише вперед!</div>
           </div>
           <div class="col-auto">
@@ -105,7 +105,7 @@
             <div class="text-h3 text-weight-bold text-primary q-mt-sm">{{ score }}</div>
             <div class="text-caption text-grey-7">Пройдена відстань: {{ Math.round(distance) }} м</div>
             <div v-if="isNewRecord" class="text-positive q-mt-sm">
-              🎉 Новий рекорд! 🎉
+              Новий рекорд!
             </div>
             <q-btn
               unelevated
@@ -251,12 +251,12 @@ export default defineComponent({
     const gameOverMessage = computed(() => {
       const messages = {
         obstacle: ['Напоролися на кактус!', 'Повезе наступного разу!', 'Спробуйте ще!'],
-        enemy: ['Вас схопив ворожий динозавр!', 'Будьте уважніші до ворогів!', 'Майже вдалося оминути!'],
-        lightning: ['Вас уразила блискавка ⚡!', 'Погода була проти вас!', 'Не пощастило з погодою!']
+        enemy: ['Вас схопив ворожий динозавр!', 'Будьте уважніші до ворожих динозаврів!', 'Майже вдалося оминути ворожого динозавра!'],
+        lightning: ['Вас уразила блискавка!', 'Погода була проти вас!', 'Не пощастило з погодою!']
       }
       const options = messages[deathReason.value] || messages.obstacle
       return options[Math.floor(Math.random() * options.length)]
-    });
+    })
 
     const startGame = () => {
       gameStarted.value = true
@@ -317,7 +317,7 @@ export default defineComponent({
       if (currentWeather.value === 'rain') {
         weatherMultiplier = 2
       } else if (currentWeather.value === 'storm') {
-        weatherMultiplier = 3
+        weatherMultiplier = 1.5
       }
 
       if (Math.random() < 0.3 * weatherMultiplier) {
@@ -341,7 +341,7 @@ export default defineComponent({
       if (currentWeather.value === 'rain') {
         weatherMultiplier = 1.5
       } else if (currentWeather.value === 'storm') {
-        weatherMultiplier = 2.3
+        weatherMultiplier = 2
       }
 
       // Ворожі динозаври - рухаються вниз або вгору
@@ -379,7 +379,7 @@ export default defineComponent({
         lightning.x = Math.random() * canvasWidth
         lightning.alpha = 1
     
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < Math.floor(Math.random() * 3); i++) {
             setTimeout(() => {
                 if (gameStarted.value && !gameOver.value) createObstacle()
             }, i * 200);
@@ -414,14 +414,14 @@ export default defineComponent({
       
       // Постійне зростання складності
       if (difficultyTimer > 60) { // Кожну секунду
-        gameSpeed.value = Math.min(gameSpeed.value + 0.15, 25) // Максимум 25
+        gameSpeed.value = Math.min(gameSpeed.value + 0.15, 23) // Максимум 23
         difficultyTimer = 0
       }
       
       // Випадкові події складності
       if (Math.random() < 0.001) { // Дуже рідко
         // Раптове збільшення швидкості
-        gameSpeed.value = Math.min(gameSpeed.value + 2, 25)
+        gameSpeed.value = Math.min(gameSpeed.value + 2, 23)
       }
     }
 

@@ -69,10 +69,10 @@ export default defineComponent({
       // Після успішної відповіді
       onSuccessfulResponse: [
         {
-          probability: 1, // Завжди з'являється після надання відповіді на запит
+          probability: 0.9, // Майже завжди з'являється після надання відповіді на запит
           type: 'confetti',
           message: {
-            title: '🎊 Відповідь згенеровано!',
+            title: 'Відповідь згенеровано!',
             text: 'Сподіваймося, ця інформація Вам допоможе!',
             icon: 'mdi-check-decagram',
             color: 'positive'
@@ -83,7 +83,7 @@ export default defineComponent({
           type: 'emoji',
           emoji: '🦖',
           message: {
-            title: '🦖 Dino Runner вітає!',
+            title: 'Dino Runner вітає!',
             text: 'Очікуєте відповідь на запит? Пограйте в Dino Runner!',
             icon: 'mdi-google-controller',
             color: 'info'
@@ -93,7 +93,7 @@ export default defineComponent({
           probability: 0.15,
           type: 'message',
           message: {
-            title: '💡 Корисна інформація!',
+            title: 'Корисна інформація!',
             text: 'Ви завжди можете оцінити якість відповіді!',
             icon: 'mdi-lightbulb-on',
             color: 'warning'
@@ -107,7 +107,7 @@ export default defineComponent({
           milestone: 5,
           type: 'confetti',
           message: {
-            title: '🌟 5 запитів!',
+            title: '5 запитів!',
             text: 'Ви активно використовуєте систему!',
             icon: 'mdi-star-circle',
             color: 'primary'
@@ -117,7 +117,7 @@ export default defineComponent({
           milestone: 10,
           type: 'confetti',
           message: {
-            title: '🏆 10 запитів!',
+            title: '10 запитів!',
             text: 'Справжній дослідник документів!',
             icon: 'mdi-trophy',
             color: 'accent'
@@ -127,7 +127,7 @@ export default defineComponent({
           milestone: 30,
           type: 'confetti',
           message: {
-            title: '🎯 30 запитів!',
+            title: '30 запитів!',
             text: 'Яке завзяття! Дякуємо за активність!',
             icon: 'mdi-emoticon-excited',
             color: 'positive'
@@ -141,7 +141,7 @@ export default defineComponent({
           probability: 0.15,
           type: 'confetti',
           message: {
-            title: '⭐ Відмінна якість!',
+            title: 'Відмінна якість!',
             text: 'Відповідь отримала високу оцінку!',
             icon: 'mdi-star-face',
             color: 'positive'
@@ -156,7 +156,7 @@ export default defineComponent({
           type: 'emoji',
           emoji: '⚡',
           message: {
-            title: '⚡ Відповідь отримано швидко!',
+            title: 'Відповідь отримано швидко!',
             text: 'Відповідь отримано менше, ніж за 9 секунд!',
             icon: 'mdi-flash',
             color: 'warning'
@@ -170,7 +170,7 @@ export default defineComponent({
           probability: 0.03,
           type: 'confetti',
           message: {
-            title: '🎲 Дякуємо!',
+            title: 'Раді допомогти!',
             text: 'Дякуємо за користування системою!',
             icon: 'mdi-dice-multiple',
             color: 'secondary'
@@ -181,7 +181,7 @@ export default defineComponent({
           type: 'emoji',
           emoji: '🎪',
           message: {
-            title: '🎪 Наша вдячність!',
+            title: 'Наша вдячність!',
             text: 'Завжди раді прийти на допомогу з пошуком інформації!',
             icon: 'mdi-auto-fix',
             color: 'accent'
@@ -196,7 +196,7 @@ export default defineComponent({
           probability: 0.9,
           type: 'message',
           message: {
-            title: '🔥 Активний дослідник!',
+            title: 'Активний дослідник!',
             text: 'Схоже, ви шукаєте багато інформації!',
             icon: 'mdi-fire',
             color: 'negative'

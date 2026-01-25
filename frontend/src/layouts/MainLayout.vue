@@ -188,7 +188,7 @@
     <q-footer elevated class="bg-grey-9 text-white q-pa-sm">
       <div class="row items-center justify-between">
         <div class="text-caption">
-          © 2025 Інтелектуальний навігатор з нормативних документів КНУТШ
+          © {{ currentYear }} Інтелектуальний навігатор з нормативних документів КНУТШ
         </div>
         <div class="text-caption">
           Створено Степанюком Олексієм
@@ -211,6 +211,8 @@ export default defineComponent({
     const leftDrawerOpen = ref(false)
     const stats = ref({})
     const systemStatus = ref('initializing')
+
+    const currentYear = new Date().getFullYear()
 
     const toggleLeftDrawer = () => {
       leftDrawerOpen.value = !leftDrawerOpen.value
@@ -238,7 +240,8 @@ export default defineComponent({
       leftDrawerOpen,
       toggleLeftDrawer,
       stats,
-      systemStatus
+      systemStatus,
+      currentYear
     }
   }
 })

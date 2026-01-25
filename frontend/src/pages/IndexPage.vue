@@ -3,7 +3,7 @@
     <!-- Частинки на фоні -->
     <ParticlesBackground />
 
-    <!-- Система випадкових Easter Eggs -->
+    <!-- Система ймовірнісних сповіщень -->
     <RandomEasterEggs ref="easterEggsRef" />
 
     <!-- Запрошення до гри (маленьке вікно) -->
@@ -536,7 +536,7 @@ export default defineComponent({
         return
       }
 
-      // Повідомляємо Easter Eggs про новий запит
+      // Повідомляємо систему сповіщень про новий запит
       if (easterEggsRef.value) {
         easterEggsRef.value.onQuerySubmitted()
       }
@@ -638,7 +638,7 @@ export default defineComponent({
                 const elapsed = ((Date.now() - startTime.value) / 1000).toFixed(1)
                 responseTime.value = elapsed
                 
-                // Повідомляємо Easter Eggs про успішну відповідь
+                // Повідомляємо систему сповіщень про успішну відповідь
                 if (easterEggsRef.value) {
                   easterEggsRef.value.onSuccessfulResponse({
                     responseTime: parseFloat(elapsed),

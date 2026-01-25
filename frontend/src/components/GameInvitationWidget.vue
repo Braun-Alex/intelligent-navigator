@@ -15,7 +15,7 @@
           </div>
           
           <div class="invitation-text">
-            <div class="text-subtitle2 text-weight-bold">🎮 Чекаєте відповідь?</div>
+            <div class="text-subtitle2 text-weight-bold">Чекаєте відповідь?</div>
             <div class="text-caption">Пограйте в Dino Runner!</div>
           </div>
           
